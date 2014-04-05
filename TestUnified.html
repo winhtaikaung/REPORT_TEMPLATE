@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<!--link href="../src/nv.d3.css" rel="stylesheet" type="text/css"-->
+<link href="http://nvd3.org/assets/css/nv.d3.css" rel="stylesheet">
+
+<style>
+
+body {
+  overflow-y:scroll;
+}
+
+text {
+  font: 12px sans-serif;
+}
+
+#chart1 svg {
+  height: 500px;
+  margin: 10px;
+  min-width: 100px;
+  min-height: 100px;
+/*
+  Minimum height and width is a good idea to prevent negative SVG dimensions...
+  For example width should be =< margin.left + margin.right + 1,
+  of course 1 pixel for the entire chart would not be very useful, BUT should not have errors
+*/
+}
+
+</style>
+<body>
+<select id="reports">
+	<option value="p8uEikXhlty" >Acute Dieheria</option>
+	<option value="p8uEikXhlty">Foo disease</option>
+</select>
+
+  <div id="chart1" class='with-3d-shadow with-transitions'>
+    <svg> </svg>
+  </div>
+ 
+<script src="http://nvd3.org/assets/lib/d3.v3.js"></script>
+<script src="http://nvd3.org/assets/js/nv.d3.js"></script>
+
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
+<!--script src="jquery.js"></script-->
+<script>
+
+
+
+// DHIS2
+//86400000 millisec per day - can be replaced by Date.parse("2014-12-31")? 
+
+var w2date = function(year, wn, dayNb){
+    var j10 = new Date( year,0,10,12,0,0),
+        j4 = new Date( year,0,4,12,0,0),
+        mon1 = j4.getTime() - j10.getDay() * 86400000;
+    return new Date(mon1 + ((wn - 1)  * 7  + dayNb+1) * 86400000);
+};
+
+//$( document ).ready( function() 
+//	{
+//$( "#orgUnit" ).html("Hello");
+var previousYears = 3;
+var chosenYear = dhis2.report.date.split("-")[0];
+console.log(chosenYear);
+var average = new Array(previousYears + 1);
+var	periodstring = "pe:";
+var firstYear = chosenYear - previousYears;
+for (var i=0; i< previousYears +1 ; i++) {
+	yr = firstYear + i;
+	for (var w = 1; w < 54; w++) {
+		periodstring += yr + "W" + w + ";";
+	}
+}
+
+var url= "../api/analytics?skipMeta=true&dimension=dx:oT23rHfdmM8&dimension=ou:" + dhis2.report.organisationUnit.id + "&dimension=" + periodstring;
+
+
+
+
+//var url= "http://localhost:8080/dhis/api/analytics?skipMeta=true&dimension=dx:oT23rHfdmM8&dimension=ou:" + "p8uEikXhlty" + "&dimension=" + periodstring;
+function Drawchart(ouid){
+		//if argument is contained
+	if(arguments.length==1){
+		var changeurl="../api/analytics?skipMeta=true&dimension=dx:oT23rHfdmM8&dimension=ou:" + ouid + "&dimension=" + periodstring;
+
+		$.getJSON( changeurl, function( json ) {
+				var inputyear = dhis2.report.date.split("-")[0];
+				var timeseries = new Array(4); //hardkoda
+				for (var i=0; i< 4 ; i++) {  //hardkoda
+					timeseries[i]=new Array(53);
+				}
+
+				console.log("OU Param "+dhis2.report.organisationUnit.id);
+
+				console.log("Period String "+periodstring);
+
+				for (var i = 0; i < json.rows.length; i++) {
+						year = json.rows[i][2].slice(0,4) - inputyear + 3; //Relative to first choice - 3
+						week = json.rows[i][2].slice(5);
+						value = json.rows[i][3];
+						if ( year < 4) {
+							timeseries[year][week] = value;
+						}
+				}
+
+				average = new Array(54);
+				for (var w = 1; w < 54; w++) {
+					sum=0;
+					numerator=0;
+					for (i=1; i< 4; i++) {
+						if (timeseries[i-1][w]) {
+							numerator++;
+							sum += parseFloat(timeseries[i-1][w]);
+						}
+					}
+					if (numerator > 0) average[w] = (sum/numerator)*1.5;
+					
+		//			console.log(sum +" " + numerator + " " +timeseries[0][w]+" "+ timeseries[1][w]+" "+timeseries[2][w]+" "+" avg:" + average[w] + ": " + " value: " + timeseries[3][w]+ " " + w2date(chosenYear,w,1).getTime() );	
+				}
+					
+				chosenData = [];
+				avgData = [];
+				output = "";
+				maxVal = 0;
+				for (var w = 1; w < 53; w++) {
+					curVal = timeseries[3][w];
+					if (curVal > maxVal) maxVal = curVal;
+					weekInSeconds = w2date(inputyear,w,1).getTime();
+					avg = average[w+1];
+					if (avg > maxVal) maxVal = avg;
+					output = output + " W"+ w +" " + avg; //("+ week+") 
+					if (curVal != undefined) output = output + "," + timeseries[3][w];
+				    chosenData.push([weekInSeconds,curVal != undefined ? curVal : 0]);
+					avgData.push([weekInSeconds,avg]);
+				}
+				console.log(maxVal);
+
+		//DHIS2
+
+		var testdata = [
+		  {
+		    "key" : "Current" ,
+		    "bar": true,
+		    "values" : chosenData 
+		  } ,
+		  {
+		    "key" : "3 year average" ,
+		    "values" : avgData 
+		  }
+		].map(function(series) {
+		  series.values = series.values.map(function(d) { return {x: d[0], y: d[1] } });
+		  return series;
+		});
+
+		var chart;
+
+		nv.addGraph(function() {
+		    chart = nv.models.linePlusBarChart()
+		        .margin({top: 30, right: 60, bottom: 50, left: 70})
+		        .x(function(d,i) { return i })
+		        .color(d3.scale.category10().range());
+
+		    chart.xAxis.tickFormat(function(d) {
+		      var dx = testdata[0].values[d] && testdata[0].values[d].x || 0; //.x
+
+		      //there are alot of date format
+		      // Date have to be change
+		      return dx ? d3.time.format('%x')(new Date(dx)) : '';
+		      })
+		      .showMaxMin(true); //false
+
+		    chart.y1Axis
+		        .tickFormat(d3.format(',f'));
+
+		    chart.y2Axis
+		        .tickFormat(function(d) { return '' + d3.format('')(d) });
+				
+		    chart.bars.forceY([0,maxVal]).padData(false);
+		    chart.lines.forceY([0,maxVal]);
+
+
+		    d3.select('#chart1 svg')
+		        .datum(testdata)
+		      .transition().duration(500).call(chart);
+
+		    nv.utils.windowResize(chart.update);
+
+		    chart.dispatch.on('stateChange', function(e) { nv.log('New State:', JSON.stringify(e)); });
+
+			d3.select('.nv-y2.nv-axis').remove();
+			
+			chart.y1Axis.scale().domain(chart.y2Axis.scale().domain()); 
+		    return chart;
+		});
+		});
+	}else{
+		//if argument is not contained
+		$.getJSON( url, function( json ) {
+				var inputyear = dhis2.report.date.split("-")[0];
+				var timeseries = new Array(4); //hardkoda
+				for (var i=0; i< 4 ; i++) {  //hardkoda
+					timeseries[i]=new Array(53);
+				}
+
+				console.log("OU Param "+dhis2.report.organisationUnit.id);
+
+				console.log("Period String "+periodstring);
+
+				for (var i = 0; i < json.rows.length; i++) {
+						year = json.rows[i][2].slice(0,4) - inputyear + 3; //Relative to first choice - 3
+						week = json.rows[i][2].slice(5);
+						value = json.rows[i][3];
+						if ( year < 4) {
+							timeseries[year][week] = value;
+						}
+				}
+
+				average = new Array(54);
+				for (var w = 1; w < 54; w++) {
+					sum=0;
+					numerator=0;
+					for (i=1; i< 4; i++) {
+						if (timeseries[i-1][w]) {
+							numerator++;
+							sum += parseFloat(timeseries[i-1][w]);
+						}
+					}
+					if (numerator > 0) average[w] = (sum/numerator)*1.5;
+					
+		//			console.log(sum +" " + numerator + " " +timeseries[0][w]+" "+ timeseries[1][w]+" "+timeseries[2][w]+" "+" avg:" + average[w] + ": " + " value: " + timeseries[3][w]+ " " + w2date(chosenYear,w,1).getTime() );	
+				}
+					
+				chosenData = [];
+				avgData = [];
+				output = "";
+				maxVal = 0;
+				for (var w = 1; w < 53; w++) {
+					curVal = timeseries[3][w];
+					if (curVal > maxVal) maxVal = curVal;
+					weekInSeconds = w2date(inputyear,w,1).getTime();
+					avg = average[w+1];
+					if (avg > maxVal) maxVal = avg;
+					output = output + " W"+ w +" " + avg; //("+ week+") 
+					if (curVal != undefined) output = output + "," + timeseries[3][w];
+				    chosenData.push([weekInSeconds,curVal != undefined ? curVal : 0]);
+					avgData.push([weekInSeconds,avg]);
+				}
+				console.log(maxVal);
+
+		//DHIS2
+
+		var testdata = [
+		  {
+		    "key" : "Current" ,
+		    "bar": true,
+		    "values" : chosenData 
+		  } ,
+		  {
+		    "key" : "3 year average" ,
+		    "values" : avgData 
+		  }
+		].map(function(series) {
+		  series.values = series.values.map(function(d) { return {x: d[0], y: d[1] } });
+		  return series;
+		});
+
+		var chart;
+
+		nv.addGraph(function() {
+		    chart = nv.models.linePlusBarChart()
+		        .margin({top: 30, right: 60, bottom: 50, left: 70})
+		        .x(function(d,i) { return i })
+		        .color(d3.scale.category10().range());
+
+		    chart.xAxis.tickFormat(function(d) {
+		      var dx = testdata[0].values[d] && testdata[0].values[d].x || 0; //.x
+
+		      //there are alot of date format
+		      // Date have to be change
+		      return dx ? d3.time.format('%x')(new Date(dx)) : '';
+		      })
+		      .showMaxMin(true); //false
+
+		    chart.y1Axis
+		        .tickFormat(d3.format(',f'));
+
+		    chart.y2Axis
+		        .tickFormat(function(d) { return '' + d3.format('')(d) });
+				
+		    chart.bars.forceY([0,maxVal]).padData(false);
+		    chart.lines.forceY([0,maxVal]);
+
+
+		    d3.select('#chart1 svg')
+		        .datum(testdata)
+		      .transition().duration(500).call(chart);
+
+		    nv.utils.windowResize(chart.update);
+
+		    chart.dispatch.on('stateChange', function(e) { nv.log('New State:', JSON.stringify(e)); });
+
+			d3.select('.nv-y2.nv-axis').remove();
+			
+			chart.y1Axis.scale().domain(chart.y2Axis.scale().domain()); 
+		    return chart;
+		});
+		});
+
+	}
+
+}
+/*
+function system(a,b){
+	if(arguments.length==2){
+		alert("there is 1");
+	}else{
+		alert("there is two");
+	}
+}
+*/
+
+
+// Changing features
+$(function(){
+	// try{
+	// 	Drawdiagram();
+	// }catch(err){
+	// 	console.log(err);
+	// }
+	 Drawchart();
+		
+	 	
+	 $("#reports").change(function(){
+	 		var ouid=$(this).val();
+	 		console.log("ouid:"+ouid);
+	 		$("svg").empty();
+	 		Drawchart(ouid);
+
+	 });_
+// system(1,2);
+	
+
+});
+
+</script>
