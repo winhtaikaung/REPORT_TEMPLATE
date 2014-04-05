@@ -165,7 +165,7 @@ function Drawchart(ouid){
 
 		      //there are alot of date format
 		      // Date have to be change
-		      return dx ? d3.time.format('%x')(new Date(dx)) : '';
+		      return dx ? d3.time.format('%U')(new Date(dx)) : '';
 		      })
 		      .showMaxMin(true); //false
 
@@ -195,6 +195,7 @@ function Drawchart(ouid){
 		});
 	}else{
 		//if argument is not contained
+		console.log("not contained");
 		$.getJSON( url, function( json ) {
 				var inputyear = dhis2.report.date.split("-")[0];
 				var timeseries = new Array(4); //hardkoda
@@ -277,7 +278,7 @@ function Drawchart(ouid){
 
 		      //there are alot of date format
 		      // Date have to be change
-		      return dx ? d3.time.format('%x')(new Date(dx)) : '';
+		      return dx ? d3.time.format('%U')(new Date(dx)) : '';
 		      })
 		      .showMaxMin(true); //false
 
